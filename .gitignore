@@ -1,0 +1,8 @@
+build/
+dist/
+target/
+nbproject/
+.vscode/
+.settings/
+.project
+.classpath

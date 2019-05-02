@@ -2,31 +2,37 @@ package de.omegazirkel.risingworld;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
 // import java.security.MessageDigest;
 // import java.security.NoSuchAlgorithmException;
 import java.util.Properties;
 
 import de.omegazirkel.risingworld.tools.Colors;
+import de.omegazirkel.risingworld.tools.FileChangeListener;
 import de.omegazirkel.risingworld.tools.I18n;
+import de.omegazirkel.risingworld.tools.PluginChangeWatcher;
 import net.risingworld.api.Plugin;
+import net.risingworld.api.Server;
 import net.risingworld.api.events.EventMethod;
 import net.risingworld.api.events.Listener;
 import net.risingworld.api.events.player.PlayerCommandEvent;
-import net.risingworld.api.events.player.PlayerEnterChunkEvent;
+import net.risingworld.api.events.player.PlayerDisconnectEvent;
+// import net.risingworld.api.events.player.PlayerEnterChunkEvent;
 import net.risingworld.api.events.player.PlayerGenerateMapTileEvent;
 // import net.risingworld.api.events.player.PlayerEnterWorldpartEvent;
 import net.risingworld.api.events.player.PlayerSpawnEvent;
 import net.risingworld.api.objects.Player;
 // import net.risingworld.api.utils.Vector2i;
 // import net.risingworld.api.utils.Vector3f;
-import net.risingworld.api.utils.Vector3i;
+// import net.risingworld.api.utils.Vector3i;
 // import net.risingworld.api.utils.Utils.ByteUtils;
 import net.risingworld.api.utils.Utils.FileUtils;
 
-public class RisingMaps extends Plugin implements Listener {
+public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 
-	static final String pluginVersion = "0.1.0";
+	static final String pluginVersion = "0.2.0-SNAPSHOT";
 	static final String pluginName = "RisingMaps";
 	static final String pluginCMD = "rm";
 
@@ -41,12 +47,25 @@ public class RisingMaps extends Plugin implements Listener {
 
 	static String tileRoot = "";
 	static String webURL = "";
+	// END Settings
+
+	static boolean flagRestart = false;
 
 	@Override
 	public void onEnable() {
 		t = t != null ? t : new I18n(this);
 		registerEventListener(this);
 		this.initSettings();
+
+		try {
+			PluginChangeWatcher WU = new PluginChangeWatcher(this);
+			File f = new File(getPath());
+			WU.watchDir(f);
+			WU.startListening();
+		} catch (IOException ex) {
+			log.out(ex.getMessage(), 999);
+		}
+
 		log.out(pluginName + " Plugin is enabled", 10);
 	}
 
@@ -65,12 +84,28 @@ public class RisingMaps extends Plugin implements Listener {
 	}
 
 	@EventMethod
+	public void onPlayerDisconnect(PlayerDisconnectEvent event) {
+		Server server = getServer();
+
+		if (flagRestart) {
+			int playersLeft = server.getPlayerCount() - 1;
+			if (playersLeft == 0) {
+				log.out("Last player left the server, shutdown now due to flagRestart is set", 100); // INFO LEVEL
+				server.shutdown();
+			} else if (playersLeft > 1) {
+				this.broadcastMessage("BC_PLAYER_REMAIN", playersLeft);
+			}
+		}
+	}
+
+	@EventMethod
 	public void onPlayerGenerateMapTile(PlayerGenerateMapTileEvent event) {
 		Player player = event.getPlayer();
 		int tileX = event.getX();
 		int tileY = event.getY();
 		final File destinationFile = new File(tileRoot + "mt_" + tileX + "_" + tileY);
 		String compareHash = FileUtils.getMd5(destinationFile);
+		// executeDelayed(4f, () -> {
 		player.requestMapTileRaw(tileX, tileY, compareHash, (byte[] tile) -> {
 			if (tile == null) {
 				// player.sendTextMessage("no tile returned");
@@ -78,6 +113,7 @@ public class RisingMaps extends Plugin implements Listener {
 				FileUtils.writeBytesToFile(tile, destinationFile);
 			}
 		});
+		// });
 	}
 
 	@EventMethod
@@ -88,6 +124,13 @@ public class RisingMaps extends Plugin implements Listener {
 		String[] cmd = command.split(" ");
 
 		if (cmd[0].equals("/" + pluginCMD)) {
+			// Invalid number of arguments (0)
+			if (cmd.length < 2) {
+				player.sendTextMessage(c.error + pluginName + ":>" + c.text
+						+ t.get("MSG_CMD_ERR_ARGUMENTS", lang).replace("PH_CMD", c.error + command + c.text)
+								.replace("PH_COMMAND_HELP", c.command + "/" + pluginCMD + " help\n" + c.text));
+				return;
+			}
 			String option = cmd[1];
 			switch (option) {
 			case "info":
@@ -140,6 +183,55 @@ public class RisingMaps extends Plugin implements Listener {
 			log.out(pluginName + " Plugin settings loaded", 10);
 		} catch (Exception ex) {
 			log.out("Exception on initSettings: " + ex.getMessage(), 100);
+		}
+	}
+
+	// All stuff for plugin updates
+
+	/**
+	 *
+	 * @param i18nIndex
+	 * @param playerCount
+	 */
+	private void broadcastMessage(String i18nIndex, int playerCount) {
+		getServer().getAllPlayers().forEach((player) -> {
+			try {
+				String lang = player.getSystemLanguage();
+				player.sendTextMessage(c.warning + pluginName + ":> " + c.text
+						+ t.get(i18nIndex, lang).replace("PH_PLAYERS", playerCount + ""));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		});
+	}
+
+	@Override
+	public void onFileChangeEvent(Path file) {
+		if (file.toString().endsWith("jar")) {
+			if (restartOnUpdate) {
+				Server server = getServer();
+
+				if (server.getPlayerCount() > 0) {
+					flagRestart = true;
+					this.broadcastMessage("BC_UPDATE_FLAG", server.getPlayerCount());
+				} else {
+					log.out("onFileCreateEvent: <" + file + "> changed, restarting now (no players online)", 100);
+				}
+
+			} else {
+				log.out("onFileCreateEvent: <" + file + "> changed but restartOnUpdate is false", 0);
+			}
+		} else {
+			log.out("onFileCreateEvent: <" + file + ">", 0);
+		}
+	}
+
+	@Override
+	public void onFileCreateEvent(Path file) {
+		if (file.toString().endsWith("settings.properties")) {
+			this.initSettings();
+		} else {
+			log.out(file.toString() + " was changed", 0);
 		}
 	}
 }

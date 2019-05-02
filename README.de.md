@@ -1,9 +1,9 @@
 # Installation (prebuild)
-Download the latest zip files from [here (shared)](https://github.com/Devidian/oz_rw_plugin_tools/releases) and [here (Rising Maps)](https://github.com/Devidian/oz_rw_plugin_risingmaps/releases) and unpack them into your plugins folder.
+Lade die aktuellen Veröffentlichungen (releases) herunter von [hier (shared)](https://github.com/Devidian/oz_rw_plugin_tools/releases) und [hier (Rising Maps)](https://github.com/Devidian/oz_rw_plugin_risingmaps/releases) und entpacke sie in dein `RisingWorld/plugins` Verzeichnis
 
-## Filetree
+## Dateibaum
 
-Should look like this:
+Sollte wie folgt aussehen:
 
 ```css
     ── RisingWorld

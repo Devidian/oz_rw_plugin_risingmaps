@@ -1,6 +1,6 @@
 name: "Omega Zirkel Rising Maps Plugin"
 main: de.omegazirkel.risingworld.RisingMaps
-version: 0.2.0-SNAPSHOT
+version: 0.3.0-SNAPSHOT
 author: "Maik 'Devidian' Laschober"
 team: "Omega Zirkel"
 description: "This Plugin allows to fetch raw map files from players and save them on the server"

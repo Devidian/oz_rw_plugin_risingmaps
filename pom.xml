@@ -3,22 +3,22 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.omegazirkel.risingworld</groupId>
 	<artifactId>RisingMaps</artifactId>
-	<version>0.2.0-SNAPSHOT</version>
+	<version>0.3.0</version>
 	<packaging>jar</packaging>
 	<dependencies>
 		<dependency>
 			<groupId>net.risingworld</groupId>
 			<artifactId>PluginAPI</artifactId>
-			<version>0.9.5.4</version>
+			<version>0.9.6</version>
 			<scope>system</scope>
 			<systemPath>${basedir}/../libs/PluginAPI.jar</systemPath>
 		</dependency>
 		<dependency>
 			<groupId>de.omegazirkel.risingworld</groupId>
 			<artifactId>tools</artifactId>
-			<version>0.4.1</version>
+			<version>0.7.0</version>
 			<scope>system</scope>
-			<systemPath>${basedir}/../libs/tools-0.4.1.jar</systemPath>
+			<systemPath>${basedir}/../libs/tools-0.7.0.jar</systemPath>
 		</dependency>
 	</dependencies>
 	<build>

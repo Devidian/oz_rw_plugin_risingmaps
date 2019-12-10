@@ -4,7 +4,11 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 // import java.security.MessageDigest;
 // import java.security.NoSuchAlgorithmException;
 import java.util.Properties;
@@ -12,7 +16,10 @@ import java.util.Properties;
 import de.omegazirkel.risingworld.tools.Colors;
 import de.omegazirkel.risingworld.tools.FileChangeListener;
 import de.omegazirkel.risingworld.tools.I18n;
+// import de.omegazirkel.risingworld.tools.Logger;
 import de.omegazirkel.risingworld.tools.PluginChangeWatcher;
+import de.omegazirkel.risingworld.tools.WSClientEndpoint;
+import de.omegazirkel.risingworld.tools.WSClientEndpoint.MessageHandler;
 import net.risingworld.api.Plugin;
 import net.risingworld.api.Server;
 import net.risingworld.api.events.EventMethod;
@@ -30,9 +37,9 @@ import net.risingworld.api.objects.Player;
 // import net.risingworld.api.utils.Utils.ByteUtils;
 import net.risingworld.api.utils.Utils.FileUtils;
 
-public class RisingMaps extends Plugin implements Listener, FileChangeListener {
+public class RisingMaps extends Plugin implements Listener, MessageHandler, FileChangeListener {
 
-	static final String pluginVersion = "0.2.0-SNAPSHOT";
+	static final String pluginVersion = "0.3.0";
 	static final String pluginName = "RisingMaps";
 	static final String pluginCMD = "rm";
 
@@ -47,23 +54,28 @@ public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 
 	static String tileRoot = "";
 	static String webURL = "";
+	static boolean enableWebSocket = false;
+	static URI wsURI = null;
+	static boolean wsSendTiles = false;
 	// END Settings
 
+	// WebSocket
+	static WSClientEndpoint ws;
 	static boolean flagRestart = false;
+	static String mapId = null;
 
 	@Override
 	public void onEnable() {
 		t = t != null ? t : new I18n(this);
 		registerEventListener(this);
 		this.initSettings();
+		this.initWebSocketClient();
 
 		try {
-			PluginChangeWatcher WU = new PluginChangeWatcher(this);
 			File f = new File(getPath());
-			WU.watchDir(f);
-			WU.startListening();
-		} catch (IOException ex) {
-			log.out(ex.getMessage(), 999);
+			PluginChangeWatcher.registerFileChangeListener(this, f);
+		} catch (Exception ex) {
+			log.out(ex.toString(), 911);
 		}
 
 		log.out(pluginName + " Plugin is enabled", 10);
@@ -110,8 +122,24 @@ public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 			if (tile == null) {
 				// player.sendTextMessage("no tile returned");
 			} else {
-				FileUtils.writeBytesToFile(tile, destinationFile);
+				if (wsSendTiles && enableWebSocket && ws.isConnected) {
+					try {
+						ByteBuffer bb = ByteBuffer.allocate(9 + tile.length);
+						Byte code = 0x01;
+						bb.put(code).putInt(tileX).putInt(tileY).put(tile);
+						// bb.rewind();
+						// ByteBuffer x = bb.duplicate();
+						// log.out("Sending BinaryWS Length: " + bb.capacity() + " | " +
+						// bb.array().length);
+						ws.sendBinaryMessage(bb);
+					} catch (Exception e) {
+						log.out(e.getMessage());
+					}
+				} else {
+					FileUtils.writeBytesToFile(tile, destinationFile);
+				}
 			}
+
 		});
 		// });
 	}
@@ -145,12 +173,18 @@ public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 				player.sendTextMessage(c.okay + pluginName + ":> " + helpMessage);
 				break;
 			case "status":
+				String wsStatus = c.error + t.get("STATE_DISCONNECTED", lang);
+				if (ws != null && ws.isConnected) {
+					wsStatus = c.okay + t.get("STATE_CONNECTED", lang);
+				}
 				String statusMessage = t.get("MSG_CMD_STATUS", lang)
 						.replace("PH_VERSION", c.okay + pluginVersion + c.text)
 						.replace("PH_LANGUAGE",
 								c.comment + player.getLanguage() + " / " + player.getSystemLanguage() + c.text)
 						.replace("PH_USEDLANG", c.info + t.getLanguageUsed(lang) + c.text)
 						.replace("PH_LANG_AVAILABLE", c.okay + t.getLanguageAvailable() + c.text)
+						.replace("PH_STATE_WS", wsStatus + c.text)
+						// .replace("PH_MAP_ID", mapId + c.text)
 						.replace("PH_MAP_URL", c.info + webURL + c.text);
 				player.sendTextMessage(c.okay + pluginName + ":> " + statusMessage);
 				break;
@@ -161,6 +195,63 @@ public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 			}
 		}
 
+	}
+
+	// WebSockets
+
+	/**
+	 *
+	 */
+	private void initWebSocketClient() {
+		try {
+			if (enableWebSocket == true) {
+				ws = new WSClientEndpoint(wsURI);
+				ws.setMessageHandler(this);
+			}
+		} catch (Exception e) {
+			log.out(e.getMessage(), 911);
+			e.printStackTrace();
+		}
+	}
+
+	@Override
+	public void handleMessage(String message) {
+		log.out(message);
+	}
+
+	@Override
+	public void handleBinaryMessage(byte[] data) {
+		ByteBuffer bb = ByteBuffer.wrap(data);
+		Byte code = bb.get();
+		log.out("Code from Server: " + code);
+		switch (code) {
+		case 0x00: {
+			// Text message
+			byte[] byteArr = new byte[bb.remaining()];
+			bb.get(byteArr, bb.position(), bb.remaining());
+			String msg = Arrays.toString(byteArr);
+			// String str = new String(byteArray1, 0, 3, StandardCharsets.UTF_8);
+			log.out("Message from Server: " + msg);
+		}
+			break;
+
+		case 0x02: {
+			try {
+				// Text message
+				// byte[] byteArr = new byte[bb.remaining()];
+				ByteBuffer rawData = bb.slice();
+				// bb.get(byteArr, bb.position(), bb.remaining());
+				// String msg = Arrays.toString(byteArr);
+				mapId = new String(rawData.array(), 1, rawData.array().length - 1, StandardCharsets.UTF_8);
+				log.out("Your MapId is: " + mapId);
+			} catch (Exception e) {
+				log.out("handleBinaryMessage->Error: " + e.getMessage(), 911);
+			}
+		}
+			break;
+		default:
+			break;
+		}
 	}
 
 	/** */
@@ -178,6 +269,10 @@ public class RisingMaps extends Plugin implements Listener, FileChangeListener {
 			tileRoot = settings.getProperty("tileRoot", this.getPath() + "/tiles/");
 			webURL = settings.getProperty("webURL", "");
 
+			// WebSocket
+			enableWebSocket = settings.getProperty("enableWebSocket", "false").contentEquals("true");
+			wsURI = new URI(settings.getProperty("wsURI", "wss://rmws.omega-zirkel.de/rmp"));
+			wsSendTiles = settings.getProperty("wsSendTiles", "false").contentEquals("true");
 			// restart settings
 			restartOnUpdate = settings.getProperty("restartOnUpdate").contentEquals("true");
 			log.out(pluginName + " Plugin settings loaded", 10);
